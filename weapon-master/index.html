@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WEAPON MASTER</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      width: 100vw; height: 100vh;
+      font-family: 'Press Start 2P', monospace;
+      color: #c8e8f4;
+      cursor: default;
+      user-select: none;
+    }
+
+    #gameCanvas {
+      position: absolute;
+      top: 0; left: 0;
+      display: block;
+    }
+
+    #scanlines {
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none; z-index: 20;
+    }
+
+    #vignette {
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at center,
+        transparent 38%, rgba(0,0,0,0.65) 100%);
+      pointer-events: none; z-index: 19;
+    }
+
+    /* ── SCREEN BASE ── */
+    .screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 10;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.45s ease;
+    }
+    .screen.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    /* ──────────────────────────────────────
+       TITLE SCREEN
+    ────────────────────────────────────── */
+    #title-screen { gap: 0; }
+
+    #title-header {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 16px;
+      margin-bottom: 52px;
+    }
+
+    #title-logo {
+      font-size: clamp(26px, 4.8vw, 60px);
+      letter-spacing: .12em;
+      color: #e8f4ff;
+      text-shadow:
+        0 0 10px #5bc8ff, 0 0 30px #2a8ccc,
+        0 0 60px #1a5a8a, 4px 4px 0 #0a1e30;
+    }
+
+    #title-sub {
+      font-size: clamp(8px, 1.1vw, 13px);
+      color: #7ab8d4;
+      letter-spacing: .2em;
+      text-shadow: 0 0 8px #3a7ca8;
+    }
+
+    #title-ver {
+      font-size: clamp(6px, .8vw, 9px);
+      color: #3a5a6a;
+      letter-spacing: .14em;
+    }
+
+    #weapon-row {
+      display: flex; gap: clamp(10px, 2.5vw, 32px);
+      margin-bottom: 56px;
+    }
+
+    .w-icon {
+      font-size: clamp(22px, 3vw, 40px);
+      opacity: .45;
+      filter: drop-shadow(0 0 4px #3a8ccc);
+      transition: opacity .25s, transform .25s, filter .25s;
+      cursor: pointer;
+    }
+    .w-icon:hover {
+      opacity: 1; transform: scale(1.22) translateY(-4px);
+      filter: drop-shadow(0 0 12px #5bc8ff);
+    }
+
+    #title-menu {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 18px;
+    }
+
+    .menu-btn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(9px, 1.3vw, 15px);
+      color: #8ecfe8;
+      background: transparent;
+      border: 2px solid #2a5a70;
+      padding: 13px 44px;
+      cursor: pointer;
+      letter-spacing: .16em;
+      min-width: 240px;
+      position: relative;
+      transition: color .2s, border-color .2s, text-shadow .2s, transform .12s;
+      outline: none;
+    }
+    .menu-btn.primary { color: #c8eeff; border-color: #3a8ccc;
+      box-shadow: 0 0 12px rgba(58,140,204,.28); }
+    .menu-btn:hover {
+      color: #e8f6ff; border-color: #5bc8ff;
+      text-shadow: 0 0 8px #5bc8ff, 0 0 20px #2a8ccc;
+      transform: scale(1.04);
+    }
+    .menu-btn:active { transform: scale(.97); }
+
+    #press-key {
+      margin-top: 36px;
+      font-size: clamp(7px, .85vw, 10px);
+      color: #3a7a9a;
+      letter-spacing: .2em;
+      animation: blink 1.4s step-end infinite;
+    }
+
+    /* ──────────────────────────────────────
+       SCREEN HEADER (shared)
+    ────────────────────────────────────── */
+    .scr-header {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 10px;
+      margin-bottom: 36px;
+    }
+    .scr-title {
+      font-size: clamp(12px, 1.8vw, 22px);
+      color: #c8eeff;
+      letter-spacing: .18em;
+      text-shadow: 0 0 12px #3a9ccc;
+    }
+    .scr-sub {
+      font-size: clamp(7px, .85vw, 10px);
+      color: #4a8aaa;
+      letter-spacing: .14em;
+    }
+
+    /* Back button */
+    .back-btn {
+      position: absolute;
+      top: 28px; left: 36px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(7px, .85vw, 10px);
+      color: #4a8aaa;
+      background: transparent;
+      border: 1px solid #2a4a5a;
+      padding: 8px 16px;
+      cursor: pointer;
+      letter-spacing: .1em;
+      transition: color .2s, border-color .2s;
+      outline: none;
+    }
+    .back-btn:hover { color: #5bc8ff; border-color: #5bc8ff; }
+
+    /* ──────────────────────────────────────
+       CHARACTER SELECT
+    ────────────────────────────────────── */
+    #char-cards {
+      display: flex; gap: clamp(20px, 4vw, 56px);
+      margin-bottom: 40px;
+    }
+
+    .char-card {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 16px;
+      width: clamp(160px, 18vw, 230px);
+      padding: 24px 16px 20px;
+      border: 2px solid #1e4a60;
+      background: rgba(6,20,32,.7);
+      cursor: pointer;
+      position: relative;
+      transition: border-color .2s, box-shadow .2s, transform .15s;
+    }
+    .char-card:hover {
+      border-color: #3a8ccc;
+      box-shadow: 0 0 20px rgba(58,140,204,.3);
+      transform: translateY(-4px);
+    }
+    .char-card.selected {
+      border-color: #5bc8ff;
+      box-shadow: 0 0 28px rgba(91,200,255,.4), inset 0 0 12px rgba(91,200,255,.06);
+    }
+    .char-card.selected::after {
+      content: '✔';
+      position: absolute; top: 8px; right: 10px;
+      font-family: sans-serif;
+      font-size: 14px; color: #5bc8ff;
+    }
+
+    /* Pixel art portrait using canvas */
+    .char-portrait {
+      width: 80px; height: 112px;
+      image-rendering: pixelated;
+    }
+
+    .char-name {
+      font-size: clamp(10px, 1.3vw, 14px);
+      color: #c8eeff;
+      letter-spacing: .12em;
+    }
+
+    .char-class {
+      font-size: clamp(6px, .75vw, 9px);
+      color: #5a9ab8;
+      letter-spacing: .1em;
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    .char-stats {
+      display: flex; flex-direction: column; gap: 6px;
+      width: 100%;
+    }
+
+    .cstat-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: clamp(5px, .65vw, 8px);
+      color: #4a8aaa;
+    }
+    .cstat-label { width: 28px; flex-shrink: 0; }
+    .cstat-bar-bg {
+      flex: 1; height: 5px;
+      background: rgba(255,255,255,.08);
+    }
+    .cstat-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #2a7caa, #5bc8ff);
+      transition: width .4s ease;
+    }
+
+    /* ──────────────────────────────────────
+       WEAPON SELECT
+    ────────────────────────────────────── */
+    #weapon-phase-indicator {
+      display: flex; gap: 32px;
+      margin-bottom: 28px;
+    }
+
+    .phase-dot {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 6px;
+      opacity: .35;
+      transition: opacity .3s;
+    }
+    .phase-dot.active { opacity: 1; }
+    .phase-dot.done { opacity: .65; }
+
+    .phase-dot-circle {
+      width: 10px; height: 10px;
+      border: 2px solid #3a8ccc;
+      border-radius: 50%;
+    }
+    .phase-dot.active .phase-dot-circle {
+      background: #5bc8ff;
+      box-shadow: 0 0 8px #5bc8ff;
+    }
+    .phase-dot.done .phase-dot-circle {
+      background: #2a6a8a;
+    }
+
+    .phase-dot-label {
+      font-size: clamp(5px, .65vw, 8px);
+      color: #4a8aaa;
+      letter-spacing: .1em;
+    }
+    .phase-dot.active .phase-dot-label { color: #8ecfe8; }
+
+    #weapon-cards {
+      display: flex; gap: clamp(10px, 1.8vw, 22px);
+      margin-bottom: 32px;
+    }
+
+    .wpn-card {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 10px;
+      width: clamp(110px, 13vw, 168px);
+      padding: 18px 10px 14px;
+      border: 2px solid #1e4a60;
+      background: rgba(6,20,32,.7);
+      cursor: pointer;
+      position: relative;
+      transition: border-color .2s, box-shadow .2s, transform .15s, opacity .2s;
+    }
+    .wpn-card:hover:not(.disabled):not(.locked) {
+      border-color: #3a8ccc;
+      box-shadow: 0 0 18px rgba(58,140,204,.3);
+      transform: translateY(-3px);
+    }
+    .wpn-card.selected {
+      border-color: #5bc8ff;
+      box-shadow: 0 0 24px rgba(91,200,255,.4);
+    }
+    .wpn-card.selected::after {
+      content: '✔';
+      position: absolute; top: 6px; right: 8px;
+      font-family: sans-serif;
+      font-size: 12px; color: #5bc8ff;
+    }
+    .wpn-card.locked {
+      opacity: .28; cursor: not-allowed;
+      border-color: #1a3040;
+    }
+    .wpn-card.locked::before {
+      content: '주무기';
+      position: absolute; top: 6px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 6px; color: #3a6a7a;
+      letter-spacing: .08em;
+    }
+
+    .wpn-emoji {
+      font-size: clamp(24px, 3.2vw, 44px);
+      filter: drop-shadow(0 0 6px rgba(58,140,204,.5));
+      line-height: 1;
+    }
+
+    .wpn-name {
+      font-size: clamp(7px, .85vw, 10px);
+      color: #c8eeff;
+      letter-spacing: .08em;
+      text-align: center;
+      line-height: 1.6;
+    }
+    .wpn-sub {
+      font-size: clamp(5px, .62vw, 7px);
+      color: #3a7a9a;
+      letter-spacing: .06em;
+      text-align: center;
+    }
+    .wpn-concept {
+      font-size: clamp(5px, .6vw, 7px);
+      color: #4a9aaa;
+      text-align: center;
+      line-height: 1.7;
+      border-top: 1px solid #1e3a4a;
+      padding-top: 8px;
+      width: 100%;
+    }
+
+    .wpn-stats {
+      display: flex; flex-direction: column; gap: 5px;
+      width: 100%;
+    }
+    .wstat-row {
+      display: flex; align-items: center;
+      font-size: clamp(5px, .6vw, 7px);
+      gap: 5px; color: #3a7a9a;
+    }
+    .wstat-label { width: 26px; flex-shrink: 0; }
+    .wstat-val {
+      color: #7ab8d4;
+      margin-left: auto;
+    }
+    .wstat-bar-bg { flex: 1; height: 4px; background: rgba(255,255,255,.07); }
+    .wstat-bar { height: 100%; background: linear-gradient(90deg, #1a6a9a, #5bc8ff); }
+
+    /* ──────────────────────────────────────
+       CONFIRM / SUMMARY
+    ────────────────────────────────────── */
+    #confirm-screen .summary-box {
+      border: 2px solid #2a5a70;
+      background: rgba(6,18,28,.8);
+      padding: 32px 48px;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 28px;
+      min-width: 500px;
+    }
+
+    .summary-row {
+      display: flex; align-items: center;
+      gap: 20px; width: 100%;
+    }
+    .summary-label {
+      font-size: clamp(7px, .8vw, 9px);
+      color: #3a7a9a;
+      width: 70px; flex-shrink: 0;
+      letter-spacing: .1em;
+    }
+    .summary-value {
+      font-size: clamp(9px, 1.1vw, 13px);
+      color: #c8eeff;
+      letter-spacing: .1em;
+    }
+    .summary-divider {
+      width: 100%; height: 1px;
+      background: linear-gradient(90deg, transparent, #2a5a70, transparent);
+    }
+
+    .dual-weapons {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .dual-sep {
+      font-size: clamp(8px, 1vw, 12px);
+      color: #2a5a70;
+    }
+
+    /* ──────────────────────────────────────
+       ACTION ROW
+    ────────────────────────────────────── */
+    .action-row {
+      display: flex; gap: 20px; align-items: center;
+    }
+
+    .btn-next {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(9px, 1.1vw, 13px);
+      color: #c8eeff;
+      background: rgba(30,90,130,.25);
+      border: 2px solid #3a8ccc;
+      padding: 14px 40px;
+      cursor: pointer;
+      letter-spacing: .14em;
+      transition: background .2s, box-shadow .2s, transform .12s;
+      outline: none;
+    }
+    .btn-next:hover {
+      background: rgba(58,140,204,.35);
+      box-shadow: 0 0 20px rgba(91,200,255,.35);
+      transform: scale(1.04);
+    }
+    .btn-next:disabled {
+      opacity: .3; cursor: not-allowed; transform: none;
+    }
+    .btn-next:active:not(:disabled) { transform: scale(.97); }
+
+    .btn-start {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(10px, 1.3vw, 15px);
+      color: #e8f8ff;
+      background: rgba(40,120,180,.3);
+      border: 2px solid #5bc8ff;
+      padding: 16px 52px;
+      cursor: pointer;
+      letter-spacing: .16em;
+      box-shadow: 0 0 16px rgba(91,200,255,.3);
+      transition: background .2s, box-shadow .2s, transform .12s;
+      outline: none;
+    }
+    .btn-start:hover {
+      background: rgba(91,200,255,.22);
+      box-shadow: 0 0 30px rgba(91,200,255,.5);
+      transform: scale(1.05);
+    }
+    .btn-start:active { transform: scale(.97); }
+
+    /* ──────────────────────────────────────
+       FOOTER
+    ────────────────────────────────────── */
+    #footer {
+      position: fixed; bottom: 20px;
+      left: 0; right: 0;
+      display: flex; justify-content: center; gap: 40px;
+      z-index: 15; pointer-events: all;
+    }
+    .footer-text {
+      font-size: clamp(6px, .7vw, 8px);
+      color: #1e3a4a; letter-spacing: .1em;
+      cursor: pointer; transition: color .2s;
+    }
+    .footer-text:hover { color: #5bc8ff; }
+
+    /* ──────────────────────────────────────
+       FLASH / TRANSITIONS
+    ────────────────────────────────────── */
+    #flash {
+      position: fixed; inset: 0;
+      background: rgba(91,200,255,.2);
+      opacity: 0; pointer-events: none;
+      z-index: 50; transition: opacity .3s;
+    }
+
+    /* ──────────────────────────────────────
+       KEYFRAMES
+    ────────────────────────────────────── */
+    @keyframes blink {
+      0%, 100% { opacity: 1; } 50% { opacity: 0; }
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="vignette"></div>
+<div id="scanlines"></div>
+<div id="flash"></div>
+
+<!-- ══════════════════════════════════════
+     TITLE SCREEN
+══════════════════════════════════════ -->
+<div class="screen active" id="title-screen">
+  <div id="title-header">
+    <div id="title-logo">WEAPON MASTER</div>
+    <div id="title-sub">2D 도트 로그라이크 RPG</div>
+    <div id="title-ver">VERSION 0.6 &nbsp;|&nbsp; EARLY BUILD</div>
+  </div>
+
+  <div id="weapon-row">
+    <span class="w-icon" title="대검">⚔️</span>
+    <span class="w-icon" title="한손검">🗡️</span>
+    <span class="w-icon" title="활">🏹</span>
+    <span class="w-icon" title="해머">🔨</span>
+    <span class="w-icon" title="창">🪃</span>
+  </div>
+
+  <div id="title-menu">
+    <button class="menu-btn primary" onclick="goTo('char-screen')">▶ &nbsp;게임 시작</button>
+    <button class="menu-btn" onclick="alert('설정 (추후 구현)')">⚙ &nbsp;설정</button>
+    <button class="menu-btn" onclick="if(confirm('종료하시겠습니까?')) window.close()">✕ &nbsp;종료</button>
+  </div>
+
+  <div id="press-key">PRESS ANY KEY TO START</div>
+</div>
+
+<!-- ══════════════════════════════════════
+     CHARACTER SELECT
+══════════════════════════════════════ -->
+<div class="screen" id="char-screen">
+  <button class="back-btn" onclick="goTo('title-screen')">◀ 뒤로</button>
+
+  <div class="scr-header">
+    <div class="scr-title">캐릭터 선택</div>
+    <div class="scr-sub">모험가를 선택하세요</div>
+  </div>
+
+  <div id="char-cards">
+    <!-- Male -->
+    <div class="char-card" id="card-male" onclick="selectChar('male')">
+      <canvas class="char-portrait" id="portrait-male" width="80" height="112"></canvas>
+      <div class="char-name">남 · KAEL</div>
+      <div class="char-class">전직 제국군 척후병<br/>강인한 체력의 전사형</div>
+      <div class="char-stats">
+        <div class="cstat-row">
+          <span class="cstat-label">HP</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:80%"></div></div>
+        </div>
+        <div class="cstat-row">
+          <span class="cstat-label">ATK</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:72%"></div></div>
+        </div>
+        <div class="cstat-row">
+          <span class="cstat-label">AGI</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:55%"></div></div>
+        </div>
+        <div class="cstat-row">
+          <span class="cstat-label">SYNC</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:60%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Female -->
+    <div class="char-card" id="card-female" onclick="selectChar('female')">
+      <canvas class="char-portrait" id="portrait-female" width="80" height="112"></canvas>
+      <div class="char-name">여 · LYRA</div>
+      <div class="char-class">방랑 유물 사냥꾼<br/>민첩한 동조율의 술사형</div>
+      <div class="char-stats">
+        <div class="cstat-row">
+          <span class="cstat-label">HP</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:62%"></div></div>
+        </div>
+        <div class="cstat-row">
+          <span class="cstat-label">ATK</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:65%"></div></div>
+        </div>
+        <div class="cstat-row">
+          <span class="cstat-label">AGI</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:88%"></div></div>
+        </div>
+        <div class="cstat-row">
+          <span class="cstat-label">SYNC</span>
+          <div class="cstat-bar-bg"><div class="cstat-bar" style="width:82%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="action-row">
+    <button class="btn-next" id="btn-char-next" onclick="goTo('weapon-screen')" disabled>
+      다음 : 무기 선택 ▶
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     WEAPON SELECT
+══════════════════════════════════════ -->
+<div class="screen" id="weapon-screen">
+  <button class="back-btn" onclick="goTo('char-screen')">◀ 뒤로</button>
+
+  <div class="scr-header">
+    <div class="scr-title" id="weapon-scr-title">주무기 선택</div>
+    <div class="scr-sub" id="weapon-scr-sub">아티팩트를 장착하세요 — 듀얼 시스템</div>
+  </div>
+
+  <!-- Phase dots -->
+  <div id="weapon-phase-indicator">
+    <div class="phase-dot active" id="phase-primary">
+      <div class="phase-dot-circle"></div>
+      <div class="phase-dot-label">주무기</div>
+    </div>
+    <div class="phase-dot" id="phase-secondary">
+      <div class="phase-dot-circle"></div>
+      <div class="phase-dot-label">보조무기</div>
+    </div>
+  </div>
+
+  <div id="weapon-cards"></div>
+
+  <div class="action-row">
+    <button class="btn-next" id="btn-weapon-next" onclick="onWeaponNext()" disabled>
+      확인 ▶
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     CONFIRM SCREEN
+══════════════════════════════════════ -->
+<div class="screen" id="confirm-screen">
+  <button class="back-btn" onclick="goTo('weapon-screen')">◀ 뒤로</button>
+
+  <div class="scr-header">
+    <div class="scr-title">준비 완료</div>
+    <div class="scr-sub">선택을 확인하세요</div>
+  </div>
+
+  <div class="summary-box">
+    <div class="summary-row">
+      <div class="summary-label">캐릭터</div>
+      <div class="summary-value" id="sum-char">—</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-row">
+      <div class="summary-label">주무기</div>
+      <div class="summary-value" id="sum-primary">—</div>
+    </div>
+    <div class="summary-row">
+      <div class="summary-label">보조무기</div>
+      <div class="summary-value" id="sum-secondary">—</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-row" style="justify-content:center">
+      <div class="dual-weapons" id="sum-dual"></div>
+    </div>
+  </div>
+
+  <div class="action-row" style="margin-top:32px">
+    <button class="btn-start" onclick="startGame()">⚔ &nbsp;전투 시작!</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     FOOTER
+══════════════════════════════════════ -->
+<div id="footer">
+  <span class="footer-text">© 2026 WEAPON MASTER</span>
+  <span class="footer-text">CREDITS</span>
+</div>
+
+<script>
+// ════════════════════════════════════════
+//  CANVAS BACKGROUND
+// ════════════════════════════════════════
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Particles
+const particles = [];
+class Particle {
+  constructor() { this.reset(true); }
+  reset(init = false) {
+    this.x     = Math.random() * W;
+    this.y     = init ? Math.random() * H : H + 4;
+    this.r     = Math.random() * 1.8 + 0.3;
+    this.vx    = (Math.random() - 0.5) * 0.4;
+    this.vy    = -(Math.random() * 0.45 + 0.15);
+    this.life  = 1;
+    this.fade  = Math.random() * 0.003 + 0.001;
+    this.alpha = Math.random() * 0.45 + 0.08;
+    this.blue  = Math.random() > 0.5;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy; this.life -= this.fade;
+    if (this.life <= 0 || this.y < -8) this.reset();
+  }
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life * 0.65;
+    ctx.fillStyle   = this.blue
+      ? `rgba(90,180,220,${this.alpha})`
+      : `rgba(160,220,255,${this.alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+for (let i = 0; i < 110; i++) particles.push(new Particle());
+
+let shimmerT = 0;
+const BUILDINGS = [
+  [.02,.55,.06,.2],[.07,.48,.04,.27],[.10,.52,.05,.23],[.16,.44,.07,.31],
+  [.22,.50,.04,.25],[.26,.46,.06,.29],[.32,.42,.09,.33],[.40,.50,.05,.25],
+  [.44,.47,.04,.28],[.52,.40,.11,.35],[.62,.46,.06,.29],[.68,.52,.04,.23],
+  [.72,.44,.08,.31],[.80,.48,.05,.27],[.84,.43,.07,.32],[.90,.50,.04,.25],
+  [.93,.47,.06,.28],
+];
+
+function renderBg() {
+  ctx.fillStyle = '#060e16';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(28,65,92,.15)';
+  ctx.lineWidth = 1;
+  const G = 48;
+  for (let x = 0; x < W; x += G) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += G) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // Ruins
+  ctx.fillStyle = 'rgba(6,14,22,.92)';
+  BUILDINGS.forEach(([rx,ry,rw,rh]) => ctx.fillRect(rx*W, ry*H, rw*W, rh*H));
+  ctx.fillRect(0, H*.75, W, H*.25);
+
+  // Horizon glow
+  const cy = H * .54;
+  const g = ctx.createRadialGradient(W/2, cy, 0, W/2, cy, W*.55);
+  g.addColorStop(0, 'rgba(18,72,120,.25)');
+  g.addColorStop(1, 'transparent');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Shimmer
+  shimmerT += .01;
+  const sx = (Math.sin(shimmerT) * .3 + .5) * W;
+  const sg = ctx.createRadialGradient(sx, H*.3, 0, sx, H*.3, W*.32);
+  sg.addColorStop(0, `rgba(55,150,210,${.05 + Math.sin(shimmerT*.7)*.025})`);
+  sg.addColorStop(1, 'transparent');
+  ctx.fillStyle = sg;
+  ctx.fillRect(0, 0, W, H * .6);
+
+  particles.forEach(p => { p.update(); p.draw(); });
+  requestAnimationFrame(renderBg);
+}
+renderBg();
+
+// ════════════════════════════════════════
+//  PIXEL ART PORTRAITS
+// ════════════════════════════════════════
+function drawMale(cvs) {
+  const c = cvs.getContext('2d');
+  const S = 5; // pixel size
+  c.clearRect(0, 0, cvs.width, cvs.height);
+  c.imageSmoothingEnabled = false;
+
+  const P = [
+    // [col, row, color]
+    // Head
+    ...[1,0,2,0,3,0,4,0,5,0].map((_,i,a)=> i%2===0 ? [a[i],1,'#8ab8cc'] : null).filter(Boolean),
+  ];
+
+  // Manual pixel art — male warrior (blue armor)
+  const pixels = [
+    // head
+    [2,0,'#c8a87a'],[3,0,'#c8a87a'],[4,0,'#c8a87a'],
+    [1,1,'#8a9caa'],[2,1,'#c8a87a'],[3,1,'#c8a87a'],[4,1,'#c8a87a'],[5,1,'#8a9caa'],
+    [1,2,'#8a9caa'],[2,2,'#c8a87a'],[3,2,'#c8a87a'],[4,2,'#c8a87a'],[5,2,'#8a9caa'],
+    [2,3,'#c8a87a'],[3,3,'#c8a87a'],[4,3,'#c8a87a'],
+    // neck
+    [3,4,'#c8a87a'],
+    // body (armor)
+    [1,5,'#1a4a6a'],[2,5,'#2a6a9a'],[3,5,'#2a6a9a'],[4,5,'#2a6a9a'],[5,5,'#1a4a6a'],
+    [1,6,'#1a4a6a'],[2,6,'#3a8acc'],[3,6,'#3a8acc'],[4,6,'#3a8acc'],[5,6,'#1a4a6a'],
+    [0,6,'#0a2a3a'],[6,6,'#0a2a3a'],
+    [1,7,'#1a4a6a'],[2,7,'#2a6a9a'],[3,7,'#2a6a9a'],[4,7,'#2a6a9a'],[5,7,'#1a4a6a'],
+    [0,7,'#0a2a3a'],[6,7,'#0a2a3a'],
+    [1,8,'#1a4a6a'],[2,8,'#2a6a9a'],[3,8,'#2a6a9a'],[4,8,'#2a6a9a'],[5,8,'#1a4a6a'],
+    // belt
+    [1,9,'#3a5a2a'],[2,9,'#3a5a2a'],[3,9,'#4a7a3a'],[4,9,'#3a5a2a'],[5,9,'#3a5a2a'],
+    // legs
+    [1,10,'#1a3a5a'],[2,10,'#1a3a5a'],[4,10,'#1a3a5a'],[5,10,'#1a3a5a'],
+    [1,11,'#1a3a5a'],[2,11,'#1a3a5a'],[4,11,'#1a3a5a'],[5,11,'#1a3a5a'],
+    [1,12,'#0a2a3a'],[2,12,'#1a3a5a'],[4,12,'#1a3a5a'],[5,12,'#0a2a3a'],
+    [2,13,'#1a2a3a'],[3,13,'#0a0a0a'],[4,13,'#1a2a3a'],
+    [2,14,'#1a2a3a'],[4,14,'#1a2a3a'],
+    [1,15,'#1a2a3a'],[2,15,'#1a2a3a'],[4,15,'#1a2a3a'],[5,15,'#1a2a3a'],
+    // boots
+    [1,16,'#0a1a28'],[2,16,'#0a1a28'],[4,16,'#0a1a28'],[5,16,'#0a1a28'],
+    [0,17,'#0a1a28'],[1,17,'#0a1a28'],[2,17,'#0a1a28'],[4,17,'#0a1a28'],[5,17,'#0a1a28'],[6,17,'#0a1a28'],
+  ];
+
+  pixels.forEach(([col, row, color]) => {
+    c.fillStyle = color;
+    c.fillRect(col * S + 4, row * S + 2, S, S);
+  });
+}
+
+function drawFemale(cvs) {
+  const c = cvs.getContext('2d');
+  const S = 5;
+  c.clearRect(0, 0, cvs.width, cvs.height);
+  c.imageSmoothingEnabled = false;
+
+  const pixels = [
+    // hair
+    [2,0,'#2a1a0a'],[3,0,'#3a2a0a'],[4,0,'#2a1a0a'],
+    [1,1,'#3a2a0a'],[2,1,'#3a2a0a'],[3,1,'#3a2a0a'],[4,1,'#3a2a0a'],[5,1,'#3a2a0a'],
+    // head
+    [1,2,'#3a2a0a'],[2,2,'#d4a87a'],[3,2,'#d4a87a'],[4,2,'#d4a87a'],[5,2,'#3a2a0a'],
+    [1,3,'#3a2a0a'],[2,3,'#d4a87a'],[3,3,'#d4a87a'],[4,3,'#d4a87a'],[5,3,'#3a2a0a'],
+    [2,4,'#d4a87a'],[3,4,'#d4a87a'],[4,4,'#d4a87a'],
+    // neck
+    [3,5,'#d4a87a'],
+    // outfit (teal/purple)
+    [2,6,'#1a6a6a'],[3,6,'#2a8a8a'],[4,6,'#1a6a6a'],
+    [1,7,'#1a4a5a'],[2,7,'#2a8a8a'],[3,7,'#2a8a8a'],[4,7,'#2a8a8a'],[5,7,'#1a4a5a'],
+    [1,8,'#1a4a5a'],[2,8,'#2a8a8a'],[3,8,'#3a9a9a'],[4,8,'#2a8a8a'],[5,8,'#1a4a5a'],
+    [1,9,'#1a4a5a'],[2,9,'#2a8a8a'],[3,9,'#2a8a8a'],[4,9,'#2a8a8a'],[5,9,'#1a4a5a'],
+    // skirt
+    [1,10,'#1a3a4a'],[2,10,'#1a5a6a'],[3,10,'#2a7a7a'],[4,10,'#1a5a6a'],[5,10,'#1a3a4a'],
+    [1,11,'#1a3a4a'],[2,11,'#1a4a5a'],[3,11,'#1a6a6a'],[4,11,'#1a4a5a'],[5,11,'#1a3a4a'],
+    // legs
+    [2,12,'#c8986a'],[4,12,'#c8986a'],
+    [2,13,'#c8986a'],[4,13,'#c8986a'],
+    // boots
+    [2,14,'#2a1a0a'],[3,14,'#0a0a0a'],[4,14,'#2a1a0a'],
+    [1,15,'#2a1a0a'],[2,15,'#2a1a0a'],[4,15,'#2a1a0a'],[5,15,'#2a1a0a'],
+    [1,16,'#1a0a0a'],[2,16,'#1a0a0a'],[4,16,'#1a0a0a'],[5,16,'#1a0a0a'],
+    // scarf detail
+    [2,5,'#4a2a5a'],[4,5,'#4a2a5a'],
+  ];
+
+  pixels.forEach(([col, row, color]) => {
+    c.fillStyle = color;
+    c.fillRect(col * S + 4, row * S + 2, S, S);
+  });
+}
+
+// Draw portraits after fonts loaded
+window.addEventListener('load', () => {
+  drawMale(document.getElementById('portrait-male'));
+  drawFemale(document.getElementById('portrait-female'));
+});
+
+// ════════════════════════════════════════
+//  GAME STATE
+// ════════════════════════════════════════
+const state = {
+  character: null,   // 'male' | 'female'
+  primary:   null,   // weapon id
+  secondary: null,   // weapon id
+  weaponPhase: 'primary',  // 'primary' | 'secondary'
+};
+
+const WEAPONS = [
+  {
+    id: 'greatsword',
+    emoji: '⚔️',
+    name: '대검',
+    sub: '심판의 쐐기',
+    concept: '패링을 이용한\n역습 플레이',
+    dmg: 120, spd: 0.70, mov: 0.80,
+    dmgPct: 92, spdPct: 54, movPct: 50,
+  },
+  {
+    id: 'sword',
+    emoji: '🗡️',
+    name: '한손검',
+    sub: '그림자 추적자',
+    concept: '연격 스택\n자가 버프',
+    dmg: 100, spd: 1.20, mov: 1.00,
+    dmgPct: 76, spdPct: 92, movPct: 75,
+  },
+  {
+    id: 'bow',
+    emoji: '🏹',
+    name: '활',
+    sub: '운명의 현',
+    concept: '폼 변환\n일반 ↔ 차징',
+    dmg: 85, spd: 1.00, mov: 1.10,
+    dmgPct: 65, spdPct: 77, movPct: 85,
+  },
+  {
+    id: 'hammer',
+    emoji: '🔨',
+    name: '해머',
+    sub: '심판의 철퇴',
+    concept: '기절 부여 →\n중첩 폭발',
+    dmg: 130, spd: 0.65, mov: 0.80,
+    dmgPct: 100, spdPct: 50, movPct: 50,
+  },
+  {
+    id: 'lance',
+    emoji: '🪃',
+    name: '창',
+    sub: '폭풍의 여명',
+    concept: '돌진 → 표식 →\n무료 돌진 루프',
+    dmg: 95, spd: 1.10, mov: 1.00,
+    dmgPct: 73, spdPct: 85, movPct: 75,
+  },
+];
+
+// ════════════════════════════════════════
+//  SCREEN TRANSITIONS
+// ════════════════════════════════════════
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+
+  if (id === 'weapon-screen') {
+    state.weaponPhase = 'primary';
+    state.primary     = null;
+    state.secondary   = null;
+    renderWeaponCards();
+    updateWeaponPhaseUI();
+  }
+  if (id === 'confirm-screen') {
+    buildConfirm();
+  }
+}
+
+// ════════════════════════════════════════
+//  CHARACTER SELECT
+// ════════════════════════════════════════
+function selectChar(gender) {
+  state.character = gender;
+  document.getElementById('card-male').classList.toggle('selected', gender === 'male');
+  document.getElementById('card-female').classList.toggle('selected', gender === 'female');
+  document.getElementById('btn-char-next').disabled = false;
+}
+
+// ════════════════════════════════════════
+//  WEAPON SELECT
+// ════════════════════════════════════════
+function renderWeaponCards() {
+  const container = document.getElementById('weapon-cards');
+  container.innerHTML = '';
+
+  WEAPONS.forEach(w => {
+    const isLocked = (state.weaponPhase === 'secondary' && w.id === state.primary);
+    const isSelected = (state.weaponPhase === 'primary')
+      ? w.id === state.primary
+      : w.id === state.secondary;
+
+    const card = document.createElement('div');
+    card.className = 'wpn-card' +
+      (isSelected ? ' selected' : '') +
+      (isLocked ? ' locked' : '');
+    card.id = 'wpn-' + w.id;
+
+    card.innerHTML = `
+      <div class="wpn-emoji">${w.emoji}</div>
+      <div class="wpn-name">${w.name}</div>
+      <div class="wpn-sub">${w.sub}</div>
+      <div class="wpn-concept">${w.concept.replace('\n','<br>')}</div>
+      <div class="wpn-stats">
+        <div class="wstat-row">
+          <span class="wstat-label">DMG</span>
+          <div class="wstat-bar-bg"><div class="wstat-bar" style="width:${w.dmgPct}%"></div></div>
+          <span class="wstat-val">${w.dmg}</span>
+        </div>
+        <div class="wstat-row">
+          <span class="wstat-label">SPD</span>
+          <div class="wstat-bar-bg"><div class="wstat-bar" style="width:${w.spdPct}%"></div></div>
+          <span class="wstat-val">${w.spd}</span>
+        </div>
+        <div class="wstat-row">
+          <span class="wstat-label">MOV</span>
+          <div class="wstat-bar-bg"><div class="wstat-bar" style="width:${w.movPct}%"></div></div>
+          <span class="wstat-val">${w.mov}</span>
+        </div>
+      </div>
+    `;
+
+    if (!isLocked) {
+      card.onclick = () => selectWeapon(w.id);
+    }
+
+    container.appendChild(card);
+  });
+}
+
+function selectWeapon(id) {
+  if (state.weaponPhase === 'primary') {
+    state.primary = id;
+  } else {
+    state.secondary = id;
+  }
+  renderWeaponCards();
+
+  const hasSelection = state.weaponPhase === 'primary'
+    ? !!state.primary
+    : !!state.secondary;
+  document.getElementById('btn-weapon-next').disabled = !hasSelection;
+}
+
+function onWeaponNext() {
+  if (state.weaponPhase === 'primary') {
+    state.weaponPhase = 'secondary';
+    state.secondary = null;
+    document.getElementById('btn-weapon-next').disabled = true;
+    document.getElementById('weapon-scr-title').textContent = '보조무기 선택';
+    document.getElementById('weapon-scr-sub').textContent  = '주무기와 조합할 보조 아티팩트';
+    document.getElementById('btn-weapon-next').textContent = '확인 ▶';
+    updateWeaponPhaseUI();
+    renderWeaponCards();
+  } else {
+    goTo('confirm-screen');
+  }
+}
+
+function updateWeaponPhaseUI() {
+  const pp = document.getElementById('phase-primary');
+  const ps = document.getElementById('phase-secondary');
+  if (state.weaponPhase === 'primary') {
+    pp.className = 'phase-dot active';
+    ps.className = 'phase-dot';
+  } else {
+    pp.className = 'phase-dot done';
+    ps.className = 'phase-dot active';
+  }
+}
+
+// ════════════════════════════════════════
+//  CONFIRM
+// ════════════════════════════════════════
+function buildConfirm() {
+  const pw = WEAPONS.find(w => w.id === state.primary);
+  const sw = WEAPONS.find(w => w.id === state.secondary);
+  const charName = state.character === 'male' ? '남 · KAEL' : '여 · LYRA';
+
+  document.getElementById('sum-char').textContent     = charName;
+  document.getElementById('sum-primary').textContent  = `${pw.emoji} ${pw.name} — ${pw.sub}`;
+  document.getElementById('sum-secondary').textContent= `${sw.emoji} ${sw.name} — ${sw.sub}`;
+
+  document.getElementById('sum-dual').innerHTML =
+    `<span style="font-size:clamp(22px,3vw,40px);filter:drop-shadow(0 0 8px #3a8ccc)">${pw.emoji}</span>` +
+    `<span style="font-size:clamp(10px,1.2vw,14px);color:#2a5a70;letter-spacing:.1em"> + </span>` +
+    `<span style="font-size:clamp(22px,3vw,40px);filter:drop-shadow(0 0 8px #3a8ccc)">${sw.emoji}</span>`;
+}
+
+// ════════════════════════════════════════
+//  START GAME
+// ════════════════════════════════════════
+function startGame() {
+  const flash = document.getElementById('flash');
+  flash.style.opacity = '1';
+  setTimeout(() => { flash.style.opacity = '0'; }, 80);
+  setTimeout(() => {
+    const pw = WEAPONS.find(w => w.id === state.primary);
+    const sw = WEAPONS.find(w => w.id === state.secondary);
+    const charName = state.character === 'male' ? 'KAEL' : 'LYRA';
+    alert(
+      `게임 시작!\n\n` +
+      `캐릭터: ${charName}\n` +
+      `주무기: ${pw.name} (${pw.sub})\n` +
+      `보조무기: ${sw.name} (${sw.sub})\n\n` +
+      `(게임플레이 화면은 추후 구현 예정)`
+    );
+  }, 300);
+}
+
+// Any key on title → start
+document.addEventListener('keydown', e => {
+  if (['Escape','F5','F12'].includes(e.key)) return;
+  const title = document.getElementById('title-screen');
+  if (title.classList.contains('active')) goTo('char-screen');
+});
+</script>
+</body>
+</html>
