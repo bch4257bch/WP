@@ -505,6 +505,83 @@
       from { opacity: 0; transform: translateY(24px); }
       to   { opacity: 1; transform: translateY(0); }
     }
+
+    /* ──────────────────────────────────────
+       BATTLE SCREEN
+    ────────────────────────────────────── */
+    #battle-screen { padding: 0; }
+
+    #battleCanvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+
+    #battle-hud {
+      position: absolute; top: 20px; left: 50%;
+      transform: translateX(-50%);
+      width: min(440px, 88vw);
+      z-index: 15;
+      display: flex; flex-direction: column; gap: 8px;
+      background: rgba(0,0,0,.45);
+      padding: 12px 18px;
+      border: 1px solid #1e3a4a;
+    }
+
+    .hud-row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .hud-label {
+      font-size: 7px; color: #4a8aaa;
+      width: 22px; flex-shrink: 0;
+    }
+    .hud-bar-bg {
+      flex: 1; height: 9px;
+      background: rgba(0,0,0,.5);
+      border: 1px solid #1a3040;
+    }
+    .hud-bar { height: 100%; transition: width .12s; }
+    .hud-bar.hp  { background: linear-gradient(90deg, #991a0a, #ee3311); }
+    .hud-bar.ap  { background: linear-gradient(90deg, #1a5a8a, #5bc8ff); }
+    .hud-val { font-size: 7px; color: #5a9ab8; width: 28px; text-align: right; }
+
+    #battle-info {
+      position: absolute; top: 20px; left: 24px;
+      z-index: 15; font-size: 7px;
+      color: #2a6a7a; letter-spacing: .08em;
+      line-height: 1.8;
+    }
+
+    #battle-controls {
+      position: absolute; bottom: 18px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 22px; z-index: 15;
+    }
+    .ctrl-hint { font-size: 6px; color: #1e4a5a; text-align: center; line-height: 1.8; }
+    .ctrl-key  { color: #3a7a9a; }
+
+    #battle-result {
+      position: absolute; inset: 0;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 28px; background: rgba(0,0,0,.72);
+      z-index: 30;
+    }
+    #battle-result-text {
+      font-size: clamp(22px, 3.5vw, 44px);
+      text-shadow: 0 0 24px currentColor;
+    }
+    #btn-back-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(8px, 1vw, 12px);
+      color: #c8eeff; background: rgba(30,80,120,.3);
+      border: 2px solid #3a8ccc;
+      padding: 12px 36px; cursor: pointer;
+      letter-spacing: .12em; outline: none;
+    }
+    #btn-back-title:hover {
+      background: rgba(58,140,204,.35);
+      box-shadow: 0 0 18px rgba(91,200,255,.4);
+    }
   </style>
 </head>
 <body>
@@ -676,6 +753,40 @@
 
   <div class="action-row" style="margin-top:32px">
     <button class="btn-start" onclick="startGame()">⚔ &nbsp;전투 시작!</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     BATTLE SCREEN
+══════════════════════════════════════ -->
+<div class="screen" id="battle-screen">
+  <canvas id="battleCanvas"></canvas>
+
+  <div id="battle-info" id="battle-info"></div>
+
+  <div id="battle-hud">
+    <div class="hud-row">
+      <span class="hud-label">HP</span>
+      <div class="hud-bar-bg"><div id="player-hp-bar" class="hud-bar hp" style="width:100%"></div></div>
+      <span class="hud-val" id="player-hp-text">100</span>
+    </div>
+    <div class="hud-row">
+      <span class="hud-label">AP</span>
+      <div class="hud-bar-bg"><div id="player-ap-bar" class="hud-bar ap" style="width:0%"></div></div>
+      <span class="hud-val" id="player-ap-text">0</span>
+    </div>
+  </div>
+
+  <div id="battle-controls">
+    <span class="ctrl-hint"><span class="ctrl-key">← → / A D</span><br>이동</span>
+    <span class="ctrl-hint"><span class="ctrl-key">↑ / W / Space</span><br>점프</span>
+    <span class="ctrl-hint"><span class="ctrl-key">Z</span><br>공격</span>
+    <span class="ctrl-hint"><span class="ctrl-key">X</span><br>스킬 (AP 20)</span>
+  </div>
+
+  <div id="battle-result">
+    <div id="battle-result-text"></div>
+    <button id="btn-back-title" onclick="goTo('title-screen')">◀ 타이틀로</button>
   </div>
 </div>
 
@@ -1085,16 +1196,8 @@ function startGame() {
   flash.style.opacity = '1';
   setTimeout(() => { flash.style.opacity = '0'; }, 80);
   setTimeout(() => {
-    const pw = WEAPONS.find(w => w.id === state.primary);
-    const sw = WEAPONS.find(w => w.id === state.secondary);
-    const charName = state.character === 'male' ? 'KAEL' : 'LYRA';
-    alert(
-      `게임 시작!\n\n` +
-      `캐릭터: ${charName}\n` +
-      `주무기: ${pw.name} (${pw.sub})\n` +
-      `보조무기: ${sw.name} (${sw.sub})\n\n` +
-      `(게임플레이 화면은 추후 구현 예정)`
-    );
+    goTo('battle-screen');
+    initBattle();
   }, 300);
 }
 
@@ -1104,6 +1207,297 @@ document.addEventListener('keydown', e => {
   const title = document.getElementById('title-screen');
   if (title.classList.contains('active')) goTo('char-screen');
 });
+
+// ════════════════════════════════════════
+//  BATTLE SYSTEM
+// ════════════════════════════════════════
+let bCtx, bW, bH, bRAF = null;
+let bKeys = {}, bState = 'idle';
+const GRAV = 0.55, JUMP_V = -13, P_SPD = 4.5, E_SPD = 1.1;
+const ATK_RANGE = 72, ATK_DMG = [20,26,38], SKILL_DMG = 55, SKILL_RANGE = 130, SKILL_AP = 20;
+let GY; // ground Y
+
+const bp = { // battle player
+  x:0,y:0,vx:0,vy:0,w:28,h:44,
+  hp:100,maxHp:100,ap:0,maxAp:100,
+  facing:1,onGround:false,
+  atkTimer:0,atkDur:16,isAtk:false,
+  combo:0,comboTimer:0,
+  hitTimer:0,invTimer:0,
+  skillTimer:0,dead:false,
+};
+
+let bEnemies = [], bParticles = [];
+
+function mkEnemy(x) {
+  return { x, y:0, vx:0, vy:0, w:32, h:42,
+    hp:60, maxHp:60, facing:-1,
+    onGround:false, atkTimer:0, hitTimer:0,
+    dead:false, deathT:0 };
+}
+
+function initBattle() {
+  const cvs = document.getElementById('battleCanvas');
+  bW = cvs.width  = window.innerWidth;
+  bH = cvs.height = window.innerHeight;
+  bCtx = cvs.getContext('2d');
+  GY = bH * 0.78;
+
+  Object.assign(bp, {
+    x:120, y:GY-44, vx:0, vy:0,
+    hp:100, ap:0, facing:1,
+    onGround:false, atkTimer:0, isAtk:false,
+    combo:0, comboTimer:0,
+    hitTimer:0, invTimer:0, skillTimer:0, dead:false,
+  });
+
+  bEnemies = [0.50,0.62,0.74,0.58,0.68].map(rx => {
+    const e = mkEnemy(bW * rx);
+    e.y = GY - e.h;
+    return e;
+  });
+  bParticles = [];
+  bState = 'playing';
+  document.getElementById('battle-result').style.display = 'none';
+
+  const pw = WEAPONS.find(w => w.id === state.primary);
+  const sw = WEAPONS.find(w => w.id === state.secondary);
+  document.getElementById('battle-info').textContent =
+    `${pw ? pw.emoji+pw.name : ''} + ${sw ? sw.emoji+sw.name : ''}`;
+
+  updateBHUD();
+  if (bRAF) cancelAnimationFrame(bRAF);
+  bLoop();
+}
+
+function bLoop() {
+  updateBattle();
+  renderBattle();
+  bRAF = requestAnimationFrame(bLoop);
+}
+
+function updateBattle() {
+  if (bState !== 'playing') return;
+
+  // ── Player ──
+  if (!bp.dead) {
+    const ml = bKeys['ArrowLeft']  || bKeys['a'] || bKeys['A'];
+    const mr = bKeys['ArrowRight'] || bKeys['d'] || bKeys['D'];
+    const jump = bKeys['ArrowUp']  || bKeys['w'] || bKeys['W'] || bKeys[' '];
+
+    if (ml) { bp.vx = -P_SPD; bp.facing = -1; }
+    else if (mr) { bp.vx =  P_SPD; bp.facing =  1; }
+    else bp.vx *= 0.7;
+
+    if (jump && bp.onGround) {
+      bp.vy = JUMP_V; bp.onGround = false;
+      bKeys['ArrowUp'] = bKeys['w'] = bKeys['W'] = bKeys[' '] = false;
+    }
+    bp.vy += GRAV;
+    bp.x += bp.vx; bp.y += bp.vy;
+    if (bp.y + bp.h >= GY) { bp.y = GY - bp.h; bp.vy = 0; bp.onGround = true; }
+    bp.x = Math.max(0, Math.min(bW - bp.w, bp.x));
+
+    if (bp.atkTimer   > 0) { bp.atkTimer--;   if (!bp.atkTimer) bp.isAtk = false; }
+    if (bp.comboTimer > 0) { bp.comboTimer--; if (!bp.comboTimer) bp.combo = 0; }
+    if (bp.hitTimer   > 0) bp.hitTimer--;
+    if (bp.invTimer   > 0) bp.invTimer--;
+    if (bp.skillTimer > 0) bp.skillTimer--;
+  }
+
+  // ── Enemies ──
+  let alive = 0;
+  bEnemies.forEach(e => {
+    if (e.dead) { e.deathT++; return; }
+    alive++;
+    e.vy += GRAV; e.y += e.vy;
+    if (e.y + e.h >= GY) { e.y = GY - e.h; e.vy = 0; e.onGround = true; }
+
+    const dx = (bp.x + bp.w/2) - (e.x + e.w/2);
+    if (Math.abs(dx) > 52) {
+      e.vx = Math.sign(dx) * E_SPD;
+      e.facing = Math.sign(dx);
+    } else {
+      e.vx = 0;
+      if (e.atkTimer <= 0 && !bp.dead && bp.invTimer <= 0) {
+        bp.hp = Math.max(0, bp.hp - 10);
+        bp.hitTimer = 12; bp.invTimer = 45;
+        e.atkTimer = 70;
+        updateBHUD();
+        if (bp.hp <= 0) { bp.dead = true; endBattle('gameover'); }
+      }
+    }
+    e.x += e.vx;
+    e.x = Math.max(0, Math.min(bW - e.w, e.x));
+    if (e.atkTimer > 0) e.atkTimer--;
+    if (e.hitTimer > 0) e.hitTimer--;
+  });
+
+  if (alive === 0 && !bp.dead && bState === 'playing') {
+    bState = 'ending';
+    setTimeout(() => endBattle('victory'), 600);
+  }
+
+  // ── Particles ──
+  bParticles = bParticles.filter(p => p.life > 0);
+  bParticles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.life--; });
+}
+
+function spawnFx(x, y, col, n=6) {
+  for (let i=0; i<n; i++) bParticles.push({
+    x, y, vx:(Math.random()-.5)*6, vy:(Math.random()-.5)*5-2,
+    life:18+Math.random()*12, color:col, r:2+Math.random()*3,
+  });
+}
+
+function doAtk() {
+  if (bp.dead || bp.atkTimer > 0) return;
+  bp.combo = (bp.combo % 3) + 1;
+  bp.comboTimer = 52; bp.atkTimer = bp.atkDur; bp.isAtk = true;
+  const dmg = ATK_DMG[bp.combo-1];
+  const cx = bp.x + (bp.facing > 0 ? bp.w + ATK_RANGE/2 : -ATK_RANGE/2);
+  const cy = bp.y + bp.h/2;
+  let hit = false;
+  bEnemies.forEach(e => {
+    if (e.dead) return;
+    if (Math.abs((e.x+e.w/2)-cx) < ATK_RANGE && Math.abs((e.y+e.h/2)-cy) < 58) {
+      e.hp -= dmg; e.hitTimer = 10; hit = true;
+      spawnFx(e.x+e.w/2, e.y+e.h/2, '#5bc8ff');
+      if (e.hp <= 0) { e.dead = true; e.deathT = 0; spawnFx(e.x+e.w/2, e.y+e.h/2, '#ffaa33', 10); }
+    }
+  });
+  if (hit) { bp.ap = Math.min(bp.maxAp, bp.ap+8); updateBHUD(); }
+}
+
+function doSkill() {
+  if (bp.dead || bp.skillTimer > 0 || bp.ap < SKILL_AP) return;
+  bp.ap -= SKILL_AP; bp.skillTimer = 45; updateBHUD();
+  const cx = bp.x + bp.w/2, cy = bp.y + bp.h/2;
+  bEnemies.forEach(e => {
+    if (e.dead) return;
+    const dist = Math.hypot((e.x+e.w/2)-cx, (e.y+e.h/2)-cy);
+    if (dist < SKILL_RANGE) {
+      e.hp -= SKILL_DMG; e.hitTimer = 15;
+      spawnFx(e.x+e.w/2, e.y+e.h/2, '#ff4488', 8);
+      if (e.hp <= 0) { e.dead = true; e.deathT = 0; spawnFx(e.x+e.w/2, e.y+e.h/2, '#ffaa33', 10); }
+    }
+  });
+  spawnFx(cx, cy, '#ff3377', 12);
+}
+
+function updateBHUD() {
+  document.getElementById('player-hp-bar').style.width = (bp.hp/bp.maxHp*100)+'%';
+  document.getElementById('player-ap-bar').style.width = (bp.ap/bp.maxAp*100)+'%';
+  document.getElementById('player-hp-text').textContent = bp.hp;
+  document.getElementById('player-ap-text').textContent = Math.floor(bp.ap);
+}
+
+function renderBattle() {
+  const c = bCtx;
+  c.clearRect(0,0,bW,bH);
+
+  // Ground
+  c.fillStyle = 'rgba(8,20,34,.88)';
+  c.fillRect(0, GY, bW, bH-GY);
+  c.fillStyle = '#1e5a78'; c.fillRect(0, GY, bW, 2);
+
+  // Grid lines on ground
+  c.strokeStyle = 'rgba(20,60,80,.25)'; c.lineWidth=1;
+  for (let x=0; x<bW; x+=64) { c.beginPath(); c.moveTo(x,GY); c.lineTo(x,bH); c.stroke(); }
+
+  // Particles
+  bParticles.forEach(p => {
+    c.save(); c.globalAlpha = p.life/30;
+    c.fillStyle = p.color;
+    c.beginPath(); c.arc(p.x,p.y,p.r,0,Math.PI*2); c.fill();
+    c.restore();
+  });
+
+  // Enemies
+  bEnemies.forEach(e => {
+    if (e.deathT > 18) return;
+    c.save();
+    c.globalAlpha = e.dead ? Math.max(0, 1-e.deathT/18) : 1;
+    const flash = e.hitTimer > 0 && Math.floor(e.hitTimer/2)%2===0;
+    // Body
+    c.fillStyle = flash ? '#fff' : '#992211';
+    c.fillRect(e.x, e.y+10, e.w, e.h-10);
+    // Head
+    c.fillStyle = flash ? '#fff' : '#cc3322';
+    c.fillRect(e.x+5, e.y, e.w-10, 14);
+    // Eye
+    c.fillStyle = '#ffcc00';
+    c.fillRect(e.facing>0 ? e.x+e.w-10 : e.x+4, e.y+4, 4,4);
+    // HP bar
+    if (!e.dead) {
+      c.fillStyle='rgba(0,0,0,.6)'; c.fillRect(e.x-4, e.y-11, e.w+8, 6);
+      c.fillStyle='#cc2211';       c.fillRect(e.x-4, e.y-11, (e.w+8)*(e.hp/e.maxHp), 6);
+    }
+    c.restore();
+  });
+
+  // Player
+  if (!bp.dead || Math.floor(Date.now()/100)%2===0) {
+    c.save();
+    const flash = bp.hitTimer > 0;
+    // Skill radius
+    if (bp.skillTimer > 28) {
+      c.fillStyle='rgba(255,40,100,.15)';
+      c.beginPath(); c.arc(bp.x+bp.w/2,bp.y+bp.h/2,SKILL_RANGE,0,Math.PI*2); c.fill();
+    }
+    // Attack arc
+    if (bp.isAtk) {
+      c.fillStyle='rgba(91,200,255,.22)';
+      const ax = bp.facing>0 ? bp.x+bp.w : bp.x-ATK_RANGE;
+      c.fillRect(ax, bp.y+4, ATK_RANGE, bp.h-8);
+    }
+    // Body
+    c.fillStyle = flash ? '#fff' : '#1a4a7a';
+    c.fillRect(bp.x+3, bp.y+12, bp.w-6, bp.h-12);
+    // Armor
+    c.fillStyle = flash ? '#ddd' : '#2a6aaa';
+    c.fillRect(bp.x+2, bp.y+16, bp.w-4, 18);
+    // Head
+    c.fillStyle = flash ? '#fff' : '#c8a87a';
+    c.fillRect(bp.x+5, bp.y, bp.w-10, 14);
+    // Eye
+    c.fillStyle = '#3af0ff';
+    c.fillRect(bp.facing>0 ? bp.x+bp.w-10 : bp.x+4, bp.y+4, 4,4);
+    // Weapon
+    c.fillStyle = flash ? '#fff' : '#8ecfe8';
+    if (bp.facing>0) c.fillRect(bp.x+bp.w, bp.y+17, 14,4);
+    else             c.fillRect(bp.x-14,   bp.y+17, 14,4);
+    c.restore();
+  }
+
+  // Combo text
+  if (bp.combo>0 && bp.comboTimer>0) {
+    c.save();
+    c.font = `bold ${10+bp.combo*4}px 'Press Start 2P',monospace`;
+    c.fillStyle = ['#5bc8ff','#ffcc44','#ff4499'][bp.combo-1];
+    c.shadowColor = c.fillStyle; c.shadowBlur = 8;
+    c.fillText(bp.combo+'HIT', bp.x+6, bp.y-16);
+    c.restore();
+  }
+}
+
+function endBattle(result) {
+  bState = result;
+  const text = document.getElementById('battle-result-text');
+  text.textContent = result==='victory' ? '승리!' : '패배...';
+  text.style.color  = result==='victory' ? '#5bc8ff' : '#ee3311';
+  document.getElementById('battle-result').style.display = 'flex';
+}
+
+// Battle key bindings
+document.addEventListener('keydown', e => {
+  bKeys[e.key] = true;
+  if (bState === 'playing') {
+    if (e.key==='z'||e.key==='Z'||e.key==='j'||e.key==='J') doAtk();
+    if (e.key==='x'||e.key==='X'||e.key==='k'||e.key==='K') doSkill();
+  }
+});
+document.addEventListener('keyup', e => { bKeys[e.key] = false; });
 </script>
 </body>
 </html>
