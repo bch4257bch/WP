@@ -582,6 +582,29 @@
       background: rgba(58,140,204,.35);
       box-shadow: 0 0 18px rgba(91,200,255,.4);
     }
+
+    /* Upgrade overlay */
+    #upgrade-overlay {
+      position: absolute; inset: 0;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 24px; background: rgba(0,0,0,.82);
+      z-index: 25;
+    }
+    .upg-title { font-size: clamp(13px,1.8vw,20px); color:#c8eeff; letter-spacing:.18em; text-shadow:0 0 12px #3a9ccc; }
+    .upg-sub   { font-size: clamp(6px,.8vw,9px); color:#3a7a9a; letter-spacing:.12em; }
+    #upgrade-cards { display:flex; gap:18px; }
+    .upg-btn {
+      font-family:'Press Start 2P',monospace;
+      display:flex; flex-direction:column; align-items:center; gap:10px;
+      width:clamp(110px,13vw,170px); padding:18px 10px;
+      border:2px solid #1e4a60; background:rgba(6,20,32,.88);
+      cursor:pointer; outline:none;
+      transition:border-color .2s, box-shadow .2s, transform .15s;
+    }
+    .upg-btn:hover { border-color:#5bc8ff; box-shadow:0 0 18px rgba(91,200,255,.35); transform:translateY(-3px); }
+    .upg-label { font-size:clamp(7px,.9vw,11px); color:#c8eeff; letter-spacing:.1em; }
+    .upg-desc  { font-size:clamp(5px,.7vw,8px);  color:#4a8aaa; letter-spacing:.08em; text-align:center; line-height:1.8; }
   </style>
 </head>
 <body>
@@ -787,6 +810,12 @@
   <div id="battle-result">
     <div id="battle-result-text"></div>
     <button id="btn-back-title" onclick="goTo('title-screen')">◀ 타이틀로</button>
+  </div>
+
+  <div id="upgrade-overlay">
+    <div class="upg-title">강화 선택</div>
+    <div class="upg-sub">하나를 골라 다음 웨이브를 대비하세요</div>
+    <div id="upgrade-cards"></div>
   </div>
 </div>
 
@@ -1209,31 +1238,68 @@ document.addEventListener('keydown', e => {
 });
 
 // ════════════════════════════════════════
-//  BATTLE SYSTEM
+//  BATTLE SYSTEM  v2
 // ════════════════════════════════════════
 let bCtx, bW, bH, bRAF = null;
 let bKeys = {}, bState = 'idle';
-const GRAV = 0.55, JUMP_V = -13, P_SPD = 4.5, E_SPD = 1.1;
-const ATK_RANGE = 72, ATK_DMG = [20,26,38], SKILL_DMG = 55, SKILL_RANGE = 130, SKILL_AP = 20;
-let GY; // ground Y
+const GRAV = 0.55, JUMP_V = -13;
+let P_SPD_BASE = 4.5, ATK_MULT = 1.0, bApBonus = 0;
+const ATK_RANGE = 72, ATK_DMG = [20,26,38];
+let GY, bWave = 0;
 
-const bp = { // battle player
+const bp = {
   x:0,y:0,vx:0,vy:0,w:28,h:44,
   hp:100,maxHp:100,ap:0,maxAp:100,
   facing:1,onGround:false,
   atkTimer:0,atkDur:16,isAtk:false,
   combo:0,comboTimer:0,
-  hitTimer:0,invTimer:0,
-  skillTimer:0,dead:false,
+  hitTimer:0,invTimer:0,skillTimer:0,
+  parrying:false,parryTimer:0,dead:false,
 };
 
 let bEnemies = [], bParticles = [];
 
-function mkEnemy(x) {
-  return { x, y:0, vx:0, vy:0, w:32, h:42,
-    hp:60, maxHp:60, facing:-1,
-    onGround:false, atkTimer:0, hitTimer:0,
-    dead:false, deathT:0 };
+const WAVES = [
+  { count:5, hp:60,  spd:1.1, col:'#992211', label:'Wave 1 / 3' },
+  { count:6, hp:90,  spd:1.5, col:'#662299', label:'Wave 2 / 3' },
+  { isBoss:true, hp:300, spd:0.9, col:'#1a0833', label:'BOSS' },
+];
+
+const UPGRADE_POOL = [
+  { label:'HP 회복',   desc:'+30 HP',        apply(){ bp.hp=Math.min(bp.maxHp,bp.hp+30); updateBHUD(); } },
+  { label:'최대 HP',   desc:'MAX HP +20',    apply(){ bp.maxHp+=20; bp.hp=Math.min(bp.maxHp,bp.hp+20); updateBHUD(); } },
+  { label:'공격력',    desc:'ATK × 1.25',    apply(){ ATK_MULT*=1.25; } },
+  { label:'AP 최대치', desc:'MAX AP +20',    apply(){ bp.maxAp+=20; updateBHUD(); } },
+  { label:'이동속도',  desc:'SPD +0.8',      apply(){ P_SPD_BASE+=0.8; } },
+  { label:'AP 회복',   desc:'히트당 AP +4',  apply(){ bApBonus+=4; } },
+];
+
+function mkEnemy(x, wd) {
+  const boss = !!wd.isBoss;
+  return {
+    x, y:0, vx:0, vy:0,
+    w:boss?64:32, h:boss?86:42,
+    hp:wd.hp, maxHp:wd.hp, spd:wd.spd, col:wd.col,
+    facing:-1, onGround:false, atkTimer:0, hitTimer:0,
+    dead:false, deathT:0, isBoss:boss,
+    rushTimer:boss?130:9999, jumpTimer:boss?190:9999, rushing:false,
+  };
+}
+
+function spawnWave(idx) {
+  const wd = WAVES[idx];
+  const positions = [0.50,0.60,0.70,0.57,0.65,0.75];
+  if (wd.isBoss) {
+    const e = mkEnemy(bW*0.72, wd); e.y = GY-e.h; bEnemies = [e];
+  } else {
+    bEnemies = positions.slice(0,wd.count).map(rx => {
+      const e = mkEnemy(bW*rx, wd); e.y = GY-e.h; return e;
+    });
+  }
+  const pw = WEAPONS.find(w=>w.id===state.primary);
+  const sw = WEAPONS.find(w=>w.id===state.secondary);
+  document.getElementById('battle-info').textContent =
+    `${pw?pw.emoji+pw.name:''} + ${sw?sw.emoji+sw.name:''}  |  ${wd.label}`;
 }
 
 function initBattle() {
@@ -1245,26 +1311,27 @@ function initBattle() {
 
   Object.assign(bp, {
     x:120, y:GY-44, vx:0, vy:0,
-    hp:100, ap:0, facing:1,
+    hp:100, maxHp:100, ap:0, maxAp:100, facing:1,
     onGround:false, atkTimer:0, isAtk:false,
-    combo:0, comboTimer:0,
-    hitTimer:0, invTimer:0, skillTimer:0, dead:false,
+    combo:0, comboTimer:0, hitTimer:0, invTimer:0,
+    skillTimer:0, parrying:false, parryTimer:0, dead:false,
   });
+  P_SPD_BASE=4.5; ATK_MULT=1.0; bApBonus=0; bWave=0;
+  bParticles=[];
+  bState='playing';
+  document.getElementById('battle-result').style.display='none';
+  document.getElementById('upgrade-overlay').style.display='none';
 
-  bEnemies = [0.50,0.62,0.74,0.58,0.68].map(rx => {
-    const e = mkEnemy(bW * rx);
-    e.y = GY - e.h;
-    return e;
-  });
-  bParticles = [];
-  bState = 'playing';
-  document.getElementById('battle-result').style.display = 'none';
+  // update skill hint
+  const SKILL_HINTS = {
+    greatsword:'패링 (AP 10)', dagger:'대시 (AP 15)',
+    bow:'화살 (AP 15)', hammer:'충격파 (AP 10)', lance:'돌진 (AP 8)',
+  };
+  const hints = document.querySelectorAll('#battle-controls .ctrl-hint');
+  if (hints[3]) hints[3].innerHTML =
+    `<span class="ctrl-key">X</span><br>${SKILL_HINTS[state.primary]||'스킬'}`;
 
-  const pw = WEAPONS.find(w => w.id === state.primary);
-  const sw = WEAPONS.find(w => w.id === state.secondary);
-  document.getElementById('battle-info').textContent =
-    `${pw ? pw.emoji+pw.name : ''} + ${sw ? sw.emoji+sw.name : ''}`;
-
+  spawnWave(0);
   updateBHUD();
   if (bRAF) cancelAnimationFrame(bRAF);
   bLoop();
@@ -1279,68 +1346,112 @@ function bLoop() {
 function updateBattle() {
   if (bState !== 'playing') return;
 
-  // ── Player ──
   if (!bp.dead) {
-    const ml = bKeys['ArrowLeft']  || bKeys['a'] || bKeys['A'];
-    const mr = bKeys['ArrowRight'] || bKeys['d'] || bKeys['D'];
-    const jump = bKeys['ArrowUp']  || bKeys['w'] || bKeys['W'] || bKeys[' '];
-
-    if (ml) { bp.vx = -P_SPD; bp.facing = -1; }
-    else if (mr) { bp.vx =  P_SPD; bp.facing =  1; }
-    else bp.vx *= 0.7;
-
-    if (jump && bp.onGround) {
-      bp.vy = JUMP_V; bp.onGround = false;
-      bKeys['ArrowUp'] = bKeys['w'] = bKeys['W'] = bKeys[' '] = false;
+    const ml   = bKeys['ArrowLeft']  || bKeys['a'] || bKeys['A'];
+    const mr   = bKeys['ArrowRight'] || bKeys['d'] || bKeys['D'];
+    const jump = bKeys['ArrowUp']    || bKeys['w'] || bKeys['W'] || bKeys[' '];
+    if (!bp.parrying) {
+      if (ml) { bp.vx=-P_SPD_BASE; bp.facing=-1; }
+      else if (mr) { bp.vx=P_SPD_BASE; bp.facing=1; }
+      else bp.vx*=0.7;
     }
-    bp.vy += GRAV;
-    bp.x += bp.vx; bp.y += bp.vy;
-    if (bp.y + bp.h >= GY) { bp.y = GY - bp.h; bp.vy = 0; bp.onGround = true; }
-    bp.x = Math.max(0, Math.min(bW - bp.w, bp.x));
-
-    if (bp.atkTimer   > 0) { bp.atkTimer--;   if (!bp.atkTimer) bp.isAtk = false; }
-    if (bp.comboTimer > 0) { bp.comboTimer--; if (!bp.comboTimer) bp.combo = 0; }
-    if (bp.hitTimer   > 0) bp.hitTimer--;
-    if (bp.invTimer   > 0) bp.invTimer--;
-    if (bp.skillTimer > 0) bp.skillTimer--;
+    if (jump && bp.onGround) {
+      bp.vy=JUMP_V; bp.onGround=false;
+      ['ArrowUp','w','W',' '].forEach(k=>bKeys[k]=false);
+    }
+    bp.vy+=GRAV; bp.x+=bp.vx; bp.y+=bp.vy;
+    if (bp.y+bp.h>=GY) { bp.y=GY-bp.h; bp.vy=0; bp.onGround=true; }
+    bp.x=Math.max(0,Math.min(bW-bp.w,bp.x));
+    if (bp.atkTimer>0)   { bp.atkTimer--;   if(!bp.atkTimer) bp.isAtk=false; }
+    if (bp.comboTimer>0) { bp.comboTimer--; if(!bp.comboTimer) bp.combo=0; }
+    if (bp.hitTimer>0)   bp.hitTimer--;
+    if (bp.invTimer>0)   bp.invTimer--;
+    if (bp.skillTimer>0) bp.skillTimer--;
+    if (bp.parryTimer>0) { bp.parryTimer--; if(!bp.parryTimer) bp.parrying=false; }
   }
 
-  // ── Enemies ──
-  let alive = 0;
+  let alive=0;
   bEnemies.forEach(e => {
     if (e.dead) { e.deathT++; return; }
     alive++;
-    e.vy += GRAV; e.y += e.vy;
-    if (e.y + e.h >= GY) { e.y = GY - e.h; e.vy = 0; e.onGround = true; }
+    e.vy+=GRAV; e.y+=e.vy;
+    if (e.y+e.h>=GY) { e.y=GY-e.h; e.vy=0; e.onGround=true; }
 
-    const dx = (bp.x + bp.w/2) - (e.x + e.w/2);
-    if (Math.abs(dx) > 52) {
-      e.vx = Math.sign(dx) * E_SPD;
-      e.facing = Math.sign(dx);
-    } else {
-      e.vx = 0;
-      if (e.atkTimer <= 0 && !bp.dead && bp.invTimer <= 0) {
-        bp.hp = Math.max(0, bp.hp - 10);
-        bp.hitTimer = 12; bp.invTimer = 45;
-        e.atkTimer = 70;
-        updateBHUD();
-        if (bp.hp <= 0) { bp.dead = true; endBattle('gameover'); }
+    // Boss patterns
+    if (e.isBoss) {
+      e.rushTimer--;
+      if (e.rushTimer<=0) {
+        e.rushing=true; e.rushTimer=160+Math.random()*60;
+        setTimeout(()=>{ if(!e.dead) e.rushing=false; },1100);
+      }
+      e.jumpTimer--;
+      if (e.jumpTimer<=0 && e.onGround) {
+        e.vy=-16; e.onGround=false;
+        e.jumpTimer=200+Math.random()*80;
       }
     }
-    e.x += e.vx;
-    e.x = Math.max(0, Math.min(bW - e.w, e.x));
-    if (e.atkTimer > 0) e.atkTimer--;
-    if (e.hitTimer > 0) e.hitTimer--;
+
+    const dx=(bp.x+bp.w/2)-(e.x+e.w/2);
+    const atkDist=e.isBoss?85:55;
+    const spd=e.rushing?e.spd*2.8:e.spd;
+    if (Math.abs(dx)>atkDist) {
+      e.vx=Math.sign(dx)*spd; e.facing=Math.sign(dx);
+    } else {
+      e.vx=0;
+      if (e.atkTimer<=0 && !bp.dead) {
+        const dmg=e.isBoss?18:10;
+        if (bp.parrying) {
+          // Parry counter!
+          e.hp-=70; e.hitTimer=18;
+          spawnFx(e.x+e.w/2,e.y+e.h/2,'#ffff44',12);
+          bp.ap=Math.min(bp.maxAp,bp.ap+20); bp.parrying=false; bp.parryTimer=0;
+          if (e.hp<=0) { e.dead=true; e.deathT=0; spawnFx(e.x+e.w/2,e.y+e.h/2,'#ffaa33',14); }
+          updateBHUD();
+        } else if (bp.invTimer<=0) {
+          bp.hp=Math.max(0,bp.hp-dmg);
+          bp.hitTimer=12; bp.invTimer=45;
+          e.atkTimer=e.isBoss?55:70;
+          updateBHUD();
+          if (bp.hp<=0) { bp.dead=true; endBattle('gameover'); }
+        }
+      }
+    }
+    e.x+=e.vx; e.x=Math.max(0,Math.min(bW-e.w,e.x));
+    if (e.atkTimer>0) e.atkTimer--;
+    if (e.hitTimer>0) e.hitTimer--;
   });
 
-  if (alive === 0 && !bp.dead && bState === 'playing') {
-    bState = 'ending';
-    setTimeout(() => endBattle('victory'), 600);
+  if (alive===0 && !bp.dead && bState==='playing') {
+    bState='waveClear';
+    setTimeout(onWaveClear, 700);
   }
 
-  // ── Particles ──
-  bParticles = bParticles.filter(p => p.life > 0);
-  bParticles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.life--; });
+  bParticles=bParticles.filter(p=>p.life>0);
+  bParticles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.life--; });
+}
+
+function onWaveClear() {
+  bWave++;
+  if (bWave>=WAVES.length) { endBattle('victory'); return; }
+  showUpgrades();
+}
+
+function showUpgrades() {
+  const pool=[...UPGRADE_POOL].sort(()=>Math.random()-.5).slice(0,3);
+  const container=document.getElementById('upgrade-cards');
+  container.innerHTML='';
+  pool.forEach(u=>{
+    const btn=document.createElement('button');
+    btn.className='upg-btn';
+    btn.innerHTML=`<div class="upg-label">${u.label}</div><div class="upg-desc">${u.desc}</div>`;
+    btn.onclick=()=>{
+      u.apply();
+      document.getElementById('upgrade-overlay').style.display='none';
+      spawnWave(bWave); bState='playing';
+    };
+    container.appendChild(btn);
+  });
+  document.getElementById('upgrade-overlay').style.display='flex';
 }
 
 function spawnFx(x, y, col, n=6) {
@@ -1351,38 +1462,102 @@ function spawnFx(x, y, col, n=6) {
 }
 
 function doAtk() {
-  if (bp.dead || bp.atkTimer > 0) return;
-  bp.combo = (bp.combo % 3) + 1;
-  bp.comboTimer = 52; bp.atkTimer = bp.atkDur; bp.isAtk = true;
-  const dmg = ATK_DMG[bp.combo-1];
-  const cx = bp.x + (bp.facing > 0 ? bp.w + ATK_RANGE/2 : -ATK_RANGE/2);
-  const cy = bp.y + bp.h/2;
-  let hit = false;
-  bEnemies.forEach(e => {
+  if (bp.dead || bp.atkTimer>0) return;
+  bp.combo=(bp.combo%3)+1; bp.comboTimer=52; bp.atkTimer=bp.atkDur; bp.isAtk=true;
+  const dmg=ATK_DMG[bp.combo-1]*ATK_MULT;
+  const cx=bp.x+(bp.facing>0?bp.w+ATK_RANGE/2:-ATK_RANGE/2);
+  const cy=bp.y+bp.h/2;
+  let hit=false;
+  bEnemies.forEach(e=>{
     if (e.dead) return;
-    if (Math.abs((e.x+e.w/2)-cx) < ATK_RANGE && Math.abs((e.y+e.h/2)-cy) < 58) {
-      e.hp -= dmg; e.hitTimer = 10; hit = true;
-      spawnFx(e.x+e.w/2, e.y+e.h/2, '#5bc8ff');
-      if (e.hp <= 0) { e.dead = true; e.deathT = 0; spawnFx(e.x+e.w/2, e.y+e.h/2, '#ffaa33', 10); }
+    if (Math.abs((e.x+e.w/2)-cx)<ATK_RANGE && Math.abs((e.y+e.h/2)-cy)<58) {
+      e.hp-=dmg; e.hitTimer=10; hit=true;
+      spawnFx(e.x+e.w/2,e.y+e.h/2,'#5bc8ff');
+      if (e.hp<=0) { e.dead=true; e.deathT=0; spawnFx(e.x+e.w/2,e.y+e.h/2,'#ffaa33',10); }
     }
   });
-  if (hit) { bp.ap = Math.min(bp.maxAp, bp.ap+8); updateBHUD(); }
+  if (hit) { bp.ap=Math.min(bp.maxAp,bp.ap+8+bApBonus); updateBHUD(); }
 }
 
 function doSkill() {
-  if (bp.dead || bp.skillTimer > 0 || bp.ap < SKILL_AP) return;
-  bp.ap -= SKILL_AP; bp.skillTimer = 45; updateBHUD();
-  const cx = bp.x + bp.w/2, cy = bp.y + bp.h/2;
-  bEnemies.forEach(e => {
-    if (e.dead) return;
-    const dist = Math.hypot((e.x+e.w/2)-cx, (e.y+e.h/2)-cy);
-    if (dist < SKILL_RANGE) {
-      e.hp -= SKILL_DMG; e.hitTimer = 15;
-      spawnFx(e.x+e.w/2, e.y+e.h/2, '#ff4488', 8);
-      if (e.hp <= 0) { e.dead = true; e.deathT = 0; spawnFx(e.x+e.w/2, e.y+e.h/2, '#ffaa33', 10); }
-    }
-  });
-  spawnFx(cx, cy, '#ff3377', 12);
+  if (bp.dead || bp.skillTimer>0) return;
+  const skills={
+    greatsword: ()=>{ // 패링
+      if (bp.ap<10) return;
+      bp.ap-=10; bp.skillTimer=30; bp.parrying=true; bp.parryTimer=28;
+      spawnFx(bp.x+bp.w/2,bp.y+bp.h/2,'#ffffaa',10); updateBHUD();
+    },
+    dagger: ()=>{ // 대시 연격
+      if (bp.ap<15) return;
+      bp.ap-=15; bp.skillTimer=35; bp.invTimer=20;
+      const dashDist=bp.facing*200;
+      const sx=bp.x+bp.w/2;
+      bp.x=Math.max(0,Math.min(bW-bp.w,bp.x+dashDist));
+      bEnemies.forEach(e=>{
+        if (e.dead) return;
+        const ex=e.x+e.w/2;
+        const inPath=bp.facing>0?(ex>=sx&&ex<=bp.x+bp.w):(ex<=sx&&ex>=bp.x);
+        if (inPath||(Math.abs(ex-(sx+dashDist/2))<Math.abs(dashDist)/2+30)) {
+          const dmg=45*ATK_MULT; e.hp-=dmg; e.hitTimer=12;
+          spawnFx(ex,e.y+e.h/2,'#ff88cc',8);
+          if (e.hp<=0) { e.dead=true; e.deathT=0; spawnFx(ex,e.y+e.h/2,'#ffaa33',10); }
+        }
+      }); updateBHUD();
+    },
+    bow: ()=>{ // 화살 3발
+      if (bp.ap<15) return;
+      bp.ap-=15; bp.skillTimer=30;
+      [-28,0,28].forEach(oy=>{
+        const ay=bp.y+bp.h/2+oy;
+        bEnemies.forEach(e=>{
+          if (e.dead) return;
+          const ex=e.x+e.w/2, ey=e.y+e.h/2;
+          const ahead=bp.facing>0?(ex>bp.x+bp.w):(ex<bp.x);
+          if (ahead && Math.abs(ey-ay)<30) {
+            const dmg=30*ATK_MULT; e.hp-=dmg; e.hitTimer=8;
+            spawnFx(ex,ey,'#88ffaa',5);
+            if (e.hp<=0) { e.dead=true; e.deathT=0; spawnFx(ex,ey,'#ffaa33',10); }
+          }
+        });
+      }); updateBHUD();
+    },
+    hammer: ()=>{ // 지진 충격파
+      if (bp.ap<10) return;
+      bp.ap-=10; bp.skillTimer=40;
+      const cx=bp.x+bp.w/2;
+      bEnemies.forEach(e=>{
+        if (e.dead) return;
+        if (Math.abs((e.x+e.w/2)-cx)<200) {
+          const dmg=50*ATK_MULT; e.hp-=dmg; e.hitTimer=22; e.atkTimer=90;
+          spawnFx(e.x+e.w/2,e.y+e.h/2,'#ffaa33',8);
+          if (e.hp<=0) { e.dead=true; e.deathT=0; spawnFx(e.x+e.w/2,e.y+e.h/2,'#ffaa33',12); }
+        }
+      });
+      for (let i=0;i<22;i++) bParticles.push({
+        x:cx+(Math.random()-.5)*400, y:GY,
+        vx:(Math.random()-.5)*3, vy:-Math.random()*4-1,
+        life:20+Math.random()*10, color:'#cc7700', r:3+Math.random()*3,
+      }); updateBHUD();
+    },
+    lance: ()=>{ // 돌진 관통
+      if (bp.ap<8) return;
+      bp.ap-=8; bp.skillTimer=28; bp.invTimer=22;
+      const sx=bp.x, dist=bp.facing*300;
+      bp.x=Math.max(0,Math.min(bW-bp.w,bp.x+dist));
+      bEnemies.forEach(e=>{
+        if (e.dead) return;
+        const ex=e.x+e.w/2;
+        const hit=bp.facing>0?(ex>=sx&&ex<=bp.x+bp.w):(ex<=sx+bp.w&&ex>=bp.x);
+        if (hit) {
+          const dmg=55*ATK_MULT; e.hp-=dmg; e.hitTimer=10;
+          spawnFx(ex,e.y+e.h/2,'#aaddff',8);
+          if (e.hp<=0) { e.dead=true; e.deathT=0; spawnFx(ex,e.y+e.h/2,'#ffaa33',10); }
+        }
+      }); updateBHUD();
+    },
+  };
+  const fn=skills[state.primary];
+  if (fn) fn();
 }
 
 function updateBHUD() {
@@ -1392,112 +1567,117 @@ function updateBHUD() {
   document.getElementById('player-ap-text').textContent = Math.floor(bp.ap);
 }
 
+function updateBHUD() {
+  document.getElementById('player-hp-bar').style.width=(bp.hp/bp.maxHp*100)+'%';
+  document.getElementById('player-ap-bar').style.width=(bp.ap/bp.maxAp*100)+'%';
+  document.getElementById('player-hp-text').textContent=bp.hp;
+  document.getElementById('player-ap-text').textContent=Math.floor(bp.ap);
+}
+
+function lc(hex,amt){ // lighten color
+  try{
+    return `rgb(${Math.min(255,parseInt(hex.slice(1,3),16)+amt)},${Math.min(255,parseInt(hex.slice(3,5),16)+amt)},${Math.min(255,parseInt(hex.slice(5,7),16)+amt)})`;
+  }catch{return hex;}
+}
+
 function renderBattle() {
-  const c = bCtx;
+  const c=bCtx;
   c.clearRect(0,0,bW,bH);
 
-  // Ground
-  c.fillStyle = 'rgba(8,20,34,.88)';
-  c.fillRect(0, GY, bW, bH-GY);
-  c.fillStyle = '#1e5a78'; c.fillRect(0, GY, bW, 2);
+  c.fillStyle='rgba(8,20,34,.9)'; c.fillRect(0,GY,bW,bH-GY);
+  c.fillStyle='#1e5a78'; c.fillRect(0,GY,bW,2);
+  c.strokeStyle='rgba(20,60,80,.22)'; c.lineWidth=1;
+  for(let x=0;x<bW;x+=64){c.beginPath();c.moveTo(x,GY);c.lineTo(x,bH);c.stroke();}
 
-  // Grid lines on ground
-  c.strokeStyle = 'rgba(20,60,80,.25)'; c.lineWidth=1;
-  for (let x=0; x<bW; x+=64) { c.beginPath(); c.moveTo(x,GY); c.lineTo(x,bH); c.stroke(); }
-
-  // Particles
-  bParticles.forEach(p => {
-    c.save(); c.globalAlpha = p.life/30;
-    c.fillStyle = p.color;
-    c.beginPath(); c.arc(p.x,p.y,p.r,0,Math.PI*2); c.fill();
+  bParticles.forEach(p=>{
+    c.save(); c.globalAlpha=p.life/30;
+    c.fillStyle=p.color; c.beginPath(); c.arc(p.x,p.y,p.r,0,Math.PI*2); c.fill();
     c.restore();
   });
 
   // Enemies
-  bEnemies.forEach(e => {
-    if (e.deathT > 18) return;
-    c.save();
-    c.globalAlpha = e.dead ? Math.max(0, 1-e.deathT/18) : 1;
-    const flash = e.hitTimer > 0 && Math.floor(e.hitTimer/2)%2===0;
-    // Body
-    c.fillStyle = flash ? '#fff' : '#992211';
-    c.fillRect(e.x, e.y+10, e.w, e.h-10);
-    // Head
-    c.fillStyle = flash ? '#fff' : '#cc3322';
-    c.fillRect(e.x+5, e.y, e.w-10, 14);
-    // Eye
-    c.fillStyle = '#ffcc00';
-    c.fillRect(e.facing>0 ? e.x+e.w-10 : e.x+4, e.y+4, 4,4);
-    // HP bar
-    if (!e.dead) {
-      c.fillStyle='rgba(0,0,0,.6)'; c.fillRect(e.x-4, e.y-11, e.w+8, 6);
-      c.fillStyle='#cc2211';       c.fillRect(e.x-4, e.y-11, (e.w+8)*(e.hp/e.maxHp), 6);
+  bEnemies.forEach(e=>{
+    if(e.deathT>20) return;
+    c.save(); c.globalAlpha=e.dead?Math.max(0,1-e.deathT/20):1;
+    const fl=e.hitTimer>0&&Math.floor(e.hitTimer/2)%2===0;
+    const hRatio=Math.floor(e.h*0.28);
+    c.fillStyle=fl?'#fff':e.col;
+    c.fillRect(e.x,e.y+hRatio,e.w,e.h-hRatio);
+    c.fillStyle=fl?'#ddd':lc(e.col,35);
+    c.fillRect(e.x+Math.floor(e.w*.15),e.y,Math.floor(e.w*.7),hRatio);
+    c.fillStyle=e.isBoss?'#ff2200':'#ffcc00';
+    if(e.isBoss){
+      c.fillRect(e.x+(e.facing>0?e.w-20:6),e.y+6,6,6);
+      c.fillRect(e.x+(e.facing>0?e.w-12:14),e.y+6,6,6);
+    } else {
+      c.fillRect(e.x+(e.facing>0?e.w-10:4),e.y+4,4,4);
+    }
+    if(!e.dead){
+      const bw=e.w+12,bx=e.x-6,by=e.y-13;
+      c.fillStyle='rgba(0,0,0,.6)'; c.fillRect(bx,by,bw,7);
+      c.fillStyle=e.isBoss?'#dd1100':'#cc2211'; c.fillRect(bx,by,bw*(e.hp/e.maxHp),7);
+      if(e.isBoss){
+        c.save(); c.font='bold 7px monospace'; c.fillStyle='#ff6644';
+        c.fillText('★ BOSS ★',e.x+e.w/2-22,by-4); c.restore();
+      }
     }
     c.restore();
   });
 
   // Player
-  if (!bp.dead || Math.floor(Date.now()/100)%2===0) {
+  if(!bp.dead||Math.floor(Date.now()/100)%2===0){
     c.save();
-    const flash = bp.hitTimer > 0;
-    // Skill radius
-    if (bp.skillTimer > 28) {
-      c.fillStyle='rgba(255,40,100,.15)';
-      c.beginPath(); c.arc(bp.x+bp.w/2,bp.y+bp.h/2,SKILL_RANGE,0,Math.PI*2); c.fill();
+    const fl=bp.hitTimer>0, parry=bp.parrying;
+    if(parry){ c.shadowColor='#ffff44'; c.shadowBlur=22; }
+    if(bp.isAtk){
+      c.fillStyle='rgba(91,200,255,.2)';
+      const ax=bp.facing>0?bp.x+bp.w:bp.x-ATK_RANGE;
+      c.fillRect(ax,bp.y+4,ATK_RANGE,bp.h-8);
     }
-    // Attack arc
-    if (bp.isAtk) {
-      c.fillStyle='rgba(91,200,255,.22)';
-      const ax = bp.facing>0 ? bp.x+bp.w : bp.x-ATK_RANGE;
-      c.fillRect(ax, bp.y+4, ATK_RANGE, bp.h-8);
+    c.fillStyle=fl?'#fff':(parry?'#ffffaa':'#1a4a7a');
+    c.fillRect(bp.x+3,bp.y+12,bp.w-6,bp.h-12);
+    c.fillStyle=fl?'#ccc':'#2a6aaa';
+    c.fillRect(bp.x+2,bp.y+16,bp.w-4,18);
+    c.fillStyle=fl?'#fff':'#c8a87a';
+    c.fillRect(bp.x+5,bp.y,bp.w-10,14);
+    c.fillStyle='#3af0ff';
+    c.fillRect(bp.facing>0?bp.x+bp.w-10:bp.x+4,bp.y+4,4,4);
+    c.fillStyle=fl?'#fff':'#8ecfe8';
+    if(bp.facing>0) c.fillRect(bp.x+bp.w,bp.y+17,14,4);
+    else            c.fillRect(bp.x-14,bp.y+17,14,4);
+    if(parry){
+      c.strokeStyle='#ffff44'; c.lineWidth=2;
+      c.strokeRect(bp.x-3,bp.y-3,bp.w+6,bp.h+6);
     }
-    // Body
-    c.fillStyle = flash ? '#fff' : '#1a4a7a';
-    c.fillRect(bp.x+3, bp.y+12, bp.w-6, bp.h-12);
-    // Armor
-    c.fillStyle = flash ? '#ddd' : '#2a6aaa';
-    c.fillRect(bp.x+2, bp.y+16, bp.w-4, 18);
-    // Head
-    c.fillStyle = flash ? '#fff' : '#c8a87a';
-    c.fillRect(bp.x+5, bp.y, bp.w-10, 14);
-    // Eye
-    c.fillStyle = '#3af0ff';
-    c.fillRect(bp.facing>0 ? bp.x+bp.w-10 : bp.x+4, bp.y+4, 4,4);
-    // Weapon
-    c.fillStyle = flash ? '#fff' : '#8ecfe8';
-    if (bp.facing>0) c.fillRect(bp.x+bp.w, bp.y+17, 14,4);
-    else             c.fillRect(bp.x-14,   bp.y+17, 14,4);
     c.restore();
   }
 
-  // Combo text
-  if (bp.combo>0 && bp.comboTimer>0) {
+  if(bp.combo>0&&bp.comboTimer>0){
     c.save();
-    c.font = `bold ${10+bp.combo*4}px 'Press Start 2P',monospace`;
-    c.fillStyle = ['#5bc8ff','#ffcc44','#ff4499'][bp.combo-1];
-    c.shadowColor = c.fillStyle; c.shadowBlur = 8;
-    c.fillText(bp.combo+'HIT', bp.x+6, bp.y-16);
+    c.font=`bold ${10+bp.combo*4}px 'Press Start 2P',monospace`;
+    c.fillStyle=['#5bc8ff','#ffcc44','#ff4499'][bp.combo-1];
+    c.shadowColor=c.fillStyle; c.shadowBlur=8;
+    c.fillText(bp.combo+'HIT',bp.x+6,bp.y-16);
     c.restore();
   }
 }
 
 function endBattle(result) {
-  bState = result;
-  const text = document.getElementById('battle-result-text');
-  text.textContent = result==='victory' ? '승리!' : '패배...';
-  text.style.color  = result==='victory' ? '#5bc8ff' : '#ee3311';
-  document.getElementById('battle-result').style.display = 'flex';
+  bState=result;
+  const text=document.getElementById('battle-result-text');
+  text.textContent=result==='victory'?'클리어!':'패배...';
+  text.style.color=result==='victory'?'#5bc8ff':'#ee3311';
+  document.getElementById('battle-result').style.display='flex';
 }
 
-// Battle key bindings
-document.addEventListener('keydown', e => {
-  bKeys[e.key] = true;
-  if (bState === 'playing') {
-    if (e.key==='z'||e.key==='Z'||e.key==='j'||e.key==='J') doAtk();
-    if (e.key==='x'||e.key==='X'||e.key==='k'||e.key==='K') doSkill();
+document.addEventListener('keydown', e=>{
+  bKeys[e.key]=true;
+  if(bState==='playing'){
+    if(e.key==='z'||e.key==='Z'||e.key==='j'||e.key==='J') doAtk();
+    if(e.key==='x'||e.key==='X'||e.key==='k'||e.key==='K') doSkill();
   }
 });
-document.addEventListener('keyup', e => { bKeys[e.key] = false; });
+document.addEventListener('keyup', e=>{ bKeys[e.key]=false; });
 </script>
 </body>
 </html>
